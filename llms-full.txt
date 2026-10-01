@@ -1,0 +1,308 @@
+# swapzone-sdk: full context for LLMs and coding assistants
+
+> Unofficial, zero-dependency TypeScript client for the Swapzone exchange aggregator API v1. Not affiliated with Swapzone. This file describes the complete public surface of the SDK, so you can write correct code against it without reading the source.
+
+## Install and import
+
+```sh
+npm install github:SwapzyCC/swapzone-sdk
+```
+
+```ts
+import { Swapzone } from "@swapzy/swapzone-sdk";
+```
+
+- ESM only (`import`, not `require`). Node 22+, Bun, Deno, Cloudflare Workers and other fetch-based runtimes.
+- Server-side only. The API key identifies a partner account and must stay secret: never generate browser code that calls Swapzone directly; proxy through a backend.
+
+## Client
+
+```ts
+const swapzone = new Swapzone({
+  apiKey?: string,                  // default: process.env.SWAPZONE_API_KEY; throws SwapzoneError if neither
+  baseUrl?: string,                 // default "https://api.swapzone.io" (paths add /v1/...)
+  fetch?: typeof fetch,             // default globalThis.fetch
+  timeoutMs?: number,               // default 30_000, per attempt
+  maxRetries?: number,              // default 2
+  headers?: Record<string, string>, // x-api-key cannot be overridden
+});
+```
+
+Every method takes an optional final `RequestOptions`:
+
+```ts
+interface RequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  maxRetries?: number;
+  headers?: Record<string, string>;
+}
+```
+
+`exchange.waitFor` and `dex.waitFor` are the exceptions: they take their own options.
+
+## Methods
+
+| Method | HTTP | Returns |
+|---|---|---|
+| `exchange.currencies(opts?)` | GET /v1/exchange/currencies | `Promise<Currency[]>` |
+| `exchange.getRate(params: GetRateParams & { chooseRate?: "best" \| "recommended" }, opts?)` | GET /v1/exchange/get-rate | `Promise<Rate>` |
+| `exchange.getRates(params: GetRateParams, opts?)` | GET /v1/exchange/get-rate?chooseRate=all | `Promise<Rate[]>` |
+| `exchange.create(params: CreateTransactionParams, opts?)` | POST /v1/exchange/create | `Promise<Transaction>` |
+| `exchange.get(id, opts?)` | GET /v1/exchange/tx?id= | `Promise<Transaction>` |
+| `exchange.list(params?: ListTransactionsParams, opts?)` | GET /v1/exchange/transactions-list | `Promise<TransactionSummary[]>` |
+| `exchange.listAll(params?: ListAllTransactionsParams, opts?)` | the same, every page | `AsyncGenerator<TransactionSummary>` |
+| `exchange.markets(params?: { rateType?: RateType }, opts?)` | GET /v1/exchange/markets | `Promise<MarketRate[]>` |
+| `exchange.pairs(params?: GetPairsParams, opts?)` | GET /v1/exchange/get-pairs | `Promise<PairsPage>` |
+| `exchange.validateAddress(params: ValidateAddressParams, opts?)` | GET /v1/exchange/validate/address | `Promise<AddressValidation>` |
+| `exchange.waitFor(id, options?: WaitForOptions)` | polls `get()` | `Promise<Transaction>` |
+| `dex.blockchains(opts?)` | GET /v1/dex/blockchains | `Promise<DexBlockchain[]>` |
+| `dex.tokens(opts?)` | GET /v1/dex/tokens | `Promise<DexTokenList>` |
+| `dex.quote(params: DexQuoteParams, opts?)` | GET /v1/dex/quote | `Promise<DexQuote[]>` |
+| `dex.allowance(params: DexAllowanceParams, opts?)` | GET /v1/dex/allow | `Promise<string>` (base units) |
+| `dex.approve(params: DexApproveParams, opts?)` | GET /v1/dex/approve | `Promise<DexTransactionRequest>` |
+| `dex.swap(params: DexSwapParams, opts?)` | GET /v1/dex/swap | `Promise<DexSwap>` |
+| `dex.status(params: DexStatusParams, opts?)` | GET /v1/dex/status | `Promise<DexSwapStatus>` |
+| `dex.waitFor(swapId, options?: DexWaitForOptions)` | polls `status()` | `Promise<DexSwapStatus>` |
+
+Other exports: `TERMINAL_STATUSES`, `isTerminalStatus(status)`, `DEX_TERMINAL_STATUSES`, `isDexTerminalStatus(status)`, `VERSION`, every error class, and every type below.
+
+## Types
+
+`Amount = number | string`. Number amounts are sent as plain decimals; pass a string for an exact value.
+
+```ts
+interface Currency {
+  name: string;
+  ticker: string;                 // lowercase, unique, includes the chain: "ltc", "usdterc20", "usdtsol"
+  network: string;                // "LTC", "ETH", "BSC", "POLYGON", "SOL", ...; may be ""
+  smartContract?: string | null;  // token contract or mint; null for a base coin
+  defaultAmount?: number | null;
+  alias?: string[];
+}
+
+type RateType = "fixed" | "floating";
+
+interface GetRateParams {
+  from: string;                   // ticker
+  to: string;                     // ticker
+  amount: Amount;                 // of `from`, whole units
+  rateType?: RateType | "all";    // default "all". NOT "float".
+  availableInUSA?: boolean;
+  noRefundAddress?: boolean;
+  fromNetwork?: string;
+  toNetwork?: string;
+  amountTo?: Amount;              // reverse quote
+  timeout?: number;               // ms the API spends collecting offers
+  ofcAdapter?: string;
+}
+
+interface Rate {
+  adapter: string;                // the partner; "_fix" suffix = its fixed offer
+  from: string; fromNetwork: string; to: string; toNetwork: string;
+  amountFrom: number;
+  amountTo: number;               // estimated amount of `to`
+  amountFromUSD?: number; amountToUSD?: number;
+  defaultAmountFrom?: number | null; defaultAmountTo?: number | null;
+  minAmount: number | null;       // null: not stated
+  maxAmount: number | null;       // null: no stated limit
+  quotaId: string;                // identifies the partner, not the quote
+  time?: number;
+  accuracyRate?: number;
+  validUntil?: string;            // fixed offers
+  offerReferenceId?: string;      // some fixed offers
+  offerExpirationTime?: string;
+  open_fincases?: string;
+}
+
+interface CreateTransactionParams {
+  from: string; to: string;
+  amountDeposit: Amount;
+  addressReceive: string;
+  extraIdReceive?: string;
+  refundAddress?: string;
+  refundExtraId?: string;
+  quotaId?: string;               // required unless noQuotaId
+  noQuotaId?: boolean;
+  fromNetwork?: string; toNetwork?: string;
+  noRefundAddress?: boolean;
+  offerReferenceId?: string;
+  ofcAdapter?: string;
+}
+
+type TransactionStatus =
+  | "waiting" | "confirming" | "exchanging" | "sending"
+  | "finished" | "failed" | "refunded" | "overdue" | string;
+
+interface Transaction {
+  id: string;
+  quotaId: string;
+  from: string; fromNetwork: string; to: string; toNetwork: string;
+  status: TransactionStatus;
+  addressDeposit: string;
+  extraIdDeposit?: string;
+  addressReceive: string;
+  extraIdReceive: string;
+  amountDeposit: string | number;
+  amountEstimated: string | number;
+  amountRealReceive?: string | number | null;
+  refundAddress: string; refundExtraId: string;
+  addressRefund?: string; extraIdRefund?: string;
+  payinHash?: string | null;
+  payoutHash?: string | null;
+  hashReceive?: string | null;    // payout hash as some partners report it
+  createdAt: string; updatedAt?: string;
+  depositReceivedAt?: string | null;
+  finishedAt?: string | null;
+  payTill?: string | null;        // deposit deadline
+  email?: string;
+  amountFromBtc?: string | number;
+}
+
+interface ListTransactionsParams {
+  limit?: number; offset?: number;
+  dateFrom?: Date | string; dateTo?: Date | string;
+  dateUpdateFrom?: Date | string; dateUpdateTo?: Date | string;
+}
+interface ListAllTransactionsParams extends Omit<ListTransactionsParams, "limit" | "offset"> { pageSize?: number } // default 100
+
+interface TransactionSummary {
+  _id: string; createdAt: string; from: string; to: string; status: TransactionStatus;
+  amountDeposit: string | number; amountEstimated: string | number;
+  addressReceive: string; extraIdReceive: string; addressDeposit: string; refundExtraId: string;
+  feeAmount?: number; profitCoin?: string; fee?: number; txFee?: number; extraFee?: number;
+}
+
+interface MarketRate { from: string; fromNetwork: string | null; to: string; toNetwork: string | null; amountFrom: number; amountTo: number; quotaId: string }
+interface GetPairsParams { adapterList?: readonly string[]; limit?: number; offset?: number }
+interface PairSide { title: string; ticker: string; network: string }
+interface Pair { from: PairSide; to: PairSide; rateType: RateType[]; adapters?: string[] }
+interface PairsPage { total: number; limit: number | string; offset: number | string; data: Pair[] }
+interface ValidateAddressParams { currency: string; address: string }
+interface AddressValidation { result: boolean; message: string | null }
+
+interface WaitForOptions {
+  until?: readonly TransactionStatus[] | ((t: Transaction) => boolean); // default TERMINAL_STATUSES
+  intervalMs?: number;            // default 15_000
+  timeoutMs?: number;             // default none; then SwapzoneTimeoutError
+  signal?: AbortSignal;
+  onUpdate?: (t: Transaction, previous: Transaction | undefined) => void;
+}
+```
+
+DEX:
+
+```ts
+interface DexBlockchain { _id: string; chainId: number | null; name: string; shortName?: string } // chainId 0 = Solana; skip null
+interface DexTokenChain {
+  chainId: number; address: string; decimals: number; // base coin address: 0xeeee...eeee
+  chainName?: string; chainSlug?: string; regAddress?: string; explorerUrlHash?: string;
+  adapters?: string[]; adaptersEnabled?: string[];
+}
+interface DexToken { _id: string; symbol: string; name: string; isActive?: boolean; logo?: string; defaultAmount?: number; defaultChain?: number; priority?: number; chains: DexTokenChain[] }
+interface DexTonToken { _id: string; chainId: number; contractAddress: string; meta?: { symbol?: string; displayName?: string; imageUrl?: string; decimals?: number }; dexPriceUsd?: string; kind?: string }
+interface DexTokenList { tokens: DexToken[]; tonTokens?: DexTonToken[] }
+
+interface DexQuoteParams { fromChainId: number; toChainId: number; fromTokenAddress: string; toTokenAddress: string; fromAmount: Amount; slippage?: number } // slippage in percent
+interface DexFee { amount: number; amountUSD: string; networkFeeTokenAddress?: string; networkFeeToken?: string; bridgeFeeTokenAddress?: string; bridgeFeeToken?: string }
+interface DexRouteId { bridge: string; bridgeTokenAddress: string; path: unknown[] }
+interface DexQuote {
+  fromChain: string; toChain: string; fromTokenAddress: string; toTokenAddress: string;
+  fromAmount: string; toAmount: string; toAmountUsd: string;
+  networkFee: DexFee[]; bridgeFee: DexFee[]; routing: string[];
+  id: DexRouteId; adapter: string;
+}
+interface DexAllowanceParams { adapter: string; fromChainId: number; toChainId: number; fromAddress: string; fromTokenAddress: string; toTokenAddress: string; bridge?: string }
+interface DexApproveParams extends DexAllowanceParams { fromAmount: Amount }
+interface DexTransactionRequest { to: string; data: string }
+interface DexSwapParams {
+  adapter: string; routeId: DexRouteId;
+  fromChainId: number; toChainId: number; fromTokenAddress: string; toTokenAddress: string;
+  fromAmount: Amount; toAmount: Amount; fromAddress: string; slippage?: number;
+}
+interface DexSwap extends DexTransactionRequest { swapId: number | string; gas?: string; amountTotalHex?: string }
+interface DexStatusParams { swapId: number | string; fromHash?: string }
+type DexSwapStatusName = "Created" | "Submitted" | "Pending Source Chain" | "Pending Destination Chain" | "Completed" | "Failed" | "Fallback" | string;
+interface DexSwapStatus {
+  status: DexSwapStatusName;
+  fromHash?: string | null; toHash?: string | null;
+  fromChain?: string; toChain?: string; bridge?: string;
+  fromToken?: string; toToken?: string; fromTokenAddress?: string; toTokenAddress?: string;
+  fromAmount?: number; toAmount?: number; realToAmount?: number | null;
+  fromAmountUsd?: string; toAmountUsd?: string;
+  partnerTxId?: string; createdAt?: string; updatedAt?: string; userAddress?: string;
+}
+interface DexWaitForOptions {
+  fromHash?: string;              // sent with the first poll only
+  until?: readonly DexSwapStatusName[] | ((s: DexSwapStatus) => boolean); // default DEX_TERMINAL_STATUSES
+  intervalMs?: number;            // default 10_000
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  onUpdate?: (s: DexSwapStatus, previous: DexSwapStatus | undefined) => void;
+}
+```
+
+## Errors
+
+All extend `SwapzoneError` (which extends `Error`).
+
+| Class | Fields | When |
+|---|---|---|
+| `SwapzoneAPIError` | `status`, `apiMessage`, `body` | The API refused. `status` is often 200: Swapzone sends most refusals as `{ error: true, message }`. |
+| `SwapzoneAuthenticationError` | as above | 401 or 403 |
+| `SwapzoneRateLimitError` | as above, plus `retryAfterMs` | 429, retries used up or the wait is over 60 s |
+| `SwapzoneTimeoutError` | | an attempt or a `waitFor()` ran out of time |
+| `SwapzoneConnectionError` | | no HTTP response |
+
+Common `apiMessage` values: `"<ticker> currency is not found"`, `"Invalid argument type"` (amount below every partner's minimum), `"Quota id is not found"`, `"Transaction Id was not found - <id>"`, and partner refusals such as an invalid address.
+
+A caller's own `AbortSignal` rejects with `signal.reason`, not a `SwapzoneError`.
+
+## Retries
+
+- 429: retried on every method after `Retry-After` or `RateLimit-Reset` (a Unix time), up to `maxRetries`.
+- 5xx, 408, timeouts and connection errors: retried with full-jitter backoff on every method except `exchange.create()` and `dex.swap()`.
+- A 200 with `error: true`: never retried.
+
+## Canonical flows
+
+Any coin to LTC, best floating offer:
+
+```ts
+const amount = 0.5;
+const offers = await swapzone.exchange.getRates({ from: "sol", to: "ltc", amount, rateType: "floating" });
+const best = offers
+  .filter((o) => (o.minAmount ?? 0) <= amount && (o.maxAmount ?? Infinity) >= amount)
+  .sort((a, b) => b.amountTo - a.amountTo)[0];
+if (!best) throw new Error("No partner takes this amount");
+
+const tx = await swapzone.exchange.create({
+  from: "sol", to: "ltc", amountDeposit: amount,
+  addressReceive: ltcAddress, refundAddress: solAddress,
+  quotaId: best.quotaId,
+});
+// Send tx.amountDeposit to tx.addressDeposit (with tx.extraIdDeposit if set).
+
+const done = await swapzone.exchange.waitFor(tx.id, { intervalMs: 30_000, timeoutMs: 2 * 3600_000 });
+if (done.status === "finished") console.log(done.payoutHash ?? done.hashReceive, done.amountRealReceive);
+```
+
+Finding a ticker:
+
+```ts
+const currencies = await swapzone.exchange.currencies();
+const usdcOnSolana = currencies.find((c) => c.network === "SOL" && c.smartContract === "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+```
+
+## Common mistakes to avoid
+
+- Don't pass `rateType: "float"`; it is `"floating"`.
+- Don't treat `quotaId` as a quote id: it names the partner. A floating order pays at the market rate when the deposit lands, not at `amountTo`.
+- Don't ignore `minAmount`/`maxAmount`: an offer outside them is refused at `create()`. Either may be `null`.
+- Don't use `Number()` on transaction amounts when exactness matters; some are decimal strings.
+- Don't read only `payoutHash`: some partners fill `hashReceive` instead.
+- Don't retry `exchange.create()` yourself after a timeout without checking `exchange.list()` first: the order may exist.
+- Don't use the token's name to pick a ticker: the same token has one ticker per chain. Match `network` and `smartContract` (lowercase EVM addresses when comparing).
+- Don't call the API from a browser or put the key in client code.
+- `exchange.validateAddress()` answers `"Check params"` on some keys for every input; validate addresses locally as well.
+- `dex.quote()` returns `[]` when no route exists or DEX access is not enabled on the key.

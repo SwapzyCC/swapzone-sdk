@@ -1,0 +1,35 @@
+# swapzone-sdk
+
+> Unofficial, zero-dependency TypeScript client for the Swapzone exchange aggregator API v1 (https://api.swapzone.io). Package name `@swapzy/swapzone-sdk`, installed from GitHub (`npm install github:SwapzyCC/swapzone-sdk`). ESM only; runs on Node 22+, Bun, Deno and edge runtimes; server-side only. Not affiliated with Swapzone.
+
+Key facts for generating code with this SDK:
+
+- Create one client: `new Swapzone({ apiKey })`. The key falls back to the `SWAPZONE_API_KEY` env var.
+- Resources: `exchange` (`currencies`, `getRate`, `getRates`, `create`, `get`, `list`, `listAll`, `markets`, `pairs`, `validateAddress`, `waitFor`) and `dex` (`blockchains`, `tokens`, `quote`, `allowance`, `approve`, `swap`, `status`, `waitFor`).
+- Fields are camelCase, exactly as the API sends them (`amountTo`, `quotaId`, `addressReceive`, `amountDeposit`).
+- A currency is one lowercase ticker that already includes the chain (`"ltc"`, `"usdterc20"`, `"usdtsol"`). Find tickers with `exchange.currencies()` by `network` and `smartContract`.
+- To swap: `exchange.getRates()` returns every partner's offer; filter by `minAmount`/`maxAmount` (either may be `null`), pick the best `amountTo`, then `exchange.create({ ..., quotaId: offer.quotaId })`.
+- Swapzone reports most refusals as HTTP 200 with `error: true`; the SDK throws `SwapzoneAPIError` for them. Every error extends `SwapzoneError`.
+- `exchange.create()` and `dex.swap()` are never retried after a 5xx or a network failure, to avoid duplicate orders.
+
+## Docs
+
+- [README](https://github.com/SwapzyCC/swapzone-sdk/blob/main/README.md): installation, concepts, recipes, errors, retries, configuration
+- [Full LLM context](https://raw.githubusercontent.com/SwapzyCC/swapzone-sdk/main/llms-full.txt): the complete public API, every type, and common mistakes, in one file
+
+## Source
+
+- [src/index.ts](https://github.com/SwapzyCC/swapzone-sdk/blob/main/src/index.ts): every public export
+- [src/types.ts](https://github.com/SwapzyCC/swapzone-sdk/blob/main/src/types.ts): request and response types
+- [src/errors.ts](https://github.com/SwapzyCC/swapzone-sdk/blob/main/src/errors.ts): error classes
+
+## Examples
+
+- [examples/quickstart.ts](https://github.com/SwapzyCC/swapzone-sdk/blob/main/examples/quickstart.ts): find a ticker and compare every partner's offer (read-only)
+- [examples/floating-swap.ts](https://github.com/SwapzyCC/swapzone-sdk/blob/main/examples/floating-swap.ts): a floating-rate swap, end to end
+- [examples/dex-quote.ts](https://github.com/SwapzyCC/swapzone-sdk/blob/main/examples/dex-quote.ts): DEX chains, tokens and a cross-chain quote (read-only)
+
+## Optional
+
+- [Swapzone partner program](https://swapzone.io/partners): the upstream service and its API keys
+- [AGENTS.md](https://github.com/SwapzyCC/swapzone-sdk/blob/main/AGENTS.md): conventions for contributing to this repository
