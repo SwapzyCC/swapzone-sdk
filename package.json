@@ -1,0 +1,62 @@
+{
+  "name": "@swapzy/swapzone-sdk",
+  "version": "0.1.0",
+  "description": "Unofficial, fully typed TypeScript client for the Swapzone exchange aggregator API: instant exchange and DEX. Zero dependencies.",
+  "keywords": [
+    "swapzone",
+    "crypto",
+    "exchange",
+    "aggregator",
+    "dex",
+    "swap",
+    "cryptocurrency",
+    "api",
+    "sdk",
+    "client",
+    "typescript"
+  ],
+  "homepage": "https://github.com/SwapzyCC/swapzone-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/SwapzyCC/swapzone-sdk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SwapzyCC/swapzone-sdk.git"
+  },
+  "license": "MIT",
+  "author": "Swapzy (https://swapzy.cc)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "llms.txt",
+    "llms-full.txt"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepare": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
